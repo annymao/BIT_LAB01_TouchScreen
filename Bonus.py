@@ -13,6 +13,7 @@ from tensorflow.keras.models import Sequential,load_model
 from tensorflow.keras.layers import Dense, Dropout, Flatten, Activation
 from tensorflow.keras.layers import Conv2D, MaxPooling2D
 from tensorflow.keras import backend as K
+from scipy.spatial import distance
 
 
 def FindCenter(contours):
@@ -34,10 +35,16 @@ previousCentroid =np.array([-1,-1])
 # initialize startTime 
 
 timeThresh = 2.0
-startTime = time.time()
-tapCount = 0
-status = "IDLE"
+velThresh = 80.0
+disThersh = 20.0
 
+startTime = time.time()
+longPressTime = time.time()
+tapCount = 0
+frameCount = 0
+status = "IDLE"
+longPressed = False
+isScroll = False
 while(True):
 	# 從攝影機擷取一張影像
 	ret, frame = cap.read()
@@ -83,27 +90,49 @@ while(True):
 			status = 'BEGIN'
 			if(tapCount == 0):
 				startTime = time.time()
+			longPressTime = time.time()
+			previousCentroid = centroid
 		if tapCount>=1 and (time.time()-startTime) > timeThresh:
 			tapCount = 0
 			print("-----TAP-----")
+
 	elif(status == 'BEGIN'):
+		if(longPressed!=True and (time.time()-longPressTime)>timeThresh):
+			print("-----LONG PRESS-----")
+			longPressed = True
 		if(centroid[0] == -1):
 			status = 'END'
+		elif(distance.euclidean(previousCentroid, centroid)>disThersh):
+			frameCount=0
+			status = 'MOVE'
+			isScroll = False
+		previousCentroid = centroid
 	elif(status == 'END'):
-		if(tapCount == 0):
-			if((time.time()-startTime)>timeThresh):
-				print((time.time()-startTime))
-				print("-----LONG PRESS-----")
-				tapCount=0
-				status = 'IDLE'
-				handWrite.fill(0)
-			else:
-				tapCount+=1
+		if(longPressed):
+			longPressed = False
+			tapCount=0
+		elif(tapCount == 0):
+			tapCount+=1
 		else:
 			print("-----MULTI TAP-----")
 			tapCount = 0
 		handWrite.fill(0)
 		status = 'IDLE'
+	elif(status == 'MOVE'):
+		frameCount+=1
+		if(frameCount>=2):
+			print("Distance: ",distance.euclidean(previousCentroid, centroid))
+			if( isScroll == False and centroid[0]==-1 ):#and distance.euclidean(previousCentroid, centroid)>velThresh):
+				print("-----SWIPE-----")
+			else:
+				previousCentroid = centroid
+				print("-----SCROLL-----")
+				isScroll = True
+		if(centroid[0] == -1):
+			handWrite.fill(0)
+			tapCount=0
+			status = 'IDLE'
+
 	else:
 		status = 'IDLE'
 
